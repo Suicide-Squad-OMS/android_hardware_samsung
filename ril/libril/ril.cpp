@@ -108,6 +108,8 @@ extern "C"
 char ril_service_name_base[MAX_SERVICE_NAME_LENGTH] = RIL_SERVICE_NAME_BASE;
 extern "C"
 char ril_service_name[MAX_SERVICE_NAME_LENGTH] = RIL1_SERVICE_NAME;
+char rild[MAX_SERVICE_NAME_LENGTH] = SOCKET_NAME_RIL;
+
 
 #define RIL_VENDOR_COMMANDS_OFFSET 10000
 
@@ -229,6 +231,113 @@ char * RIL_getServiceName() {
 extern "C"
 void RIL_setServiceName(const char * s) {
     strncpy(ril_service_name, s, MAX_SERVICE_NAME_LENGTH);
+void RIL_setRilSocketName(const char * s) {
+    strncpy(rild, s, MAX_SERVICE_NAME_LENGTH);
+}
+
+static char *
+strdupReadString(Parcel &p) {
+    size_t stringlen;
+    const char16_t *s16;
+
+    s16 = p.readString16Inplace(&stringlen);
+
+    return strndup16to8(s16, stringlen);
+}
+
+static status_t
+readStringFromParcelInplace(Parcel &p, char *str, size_t maxLen) {
+    size_t s16Len;
+    const char16_t *s16;
+
+    s16 = p.readString16Inplace(&s16Len);
+    if (s16 == NULL) {
+        return NO_MEMORY;
+    }
+    size_t strLen = strnlen16to8(s16, s16Len);
+    if ((strLen + 1) > maxLen) {
+        return NO_MEMORY;
+    }
+    if (strncpy16to8(str, s16, strLen) == NULL) {
+        return NO_MEMORY;
+    } else {
+        return NO_ERROR;
+    }
+}
+
+static void writeStringToParcel(Parcel &p, const char *s) {
+    char16_t *s16;
+    size_t s16_len;
+    s16 = strdup8to16(s, &s16_len);
+    p.writeString16(s16, s16_len);
+    free(s16);
+}
+
+
+static void
+memsetString (char *s) {
+    if (s != NULL) {
+        memset (s, 0, strlen(s));
+    }
+}
+
+void   nullParcelReleaseFunction (const uint8_t* data, size_t dataSize,
+                                    const size_t* objects, size_t objectsSize,
+                                        void* cookie) {
+    // do nothing -- the data reference lives longer than the Parcel object
+}
+
+/**
+ * To be called from dispatch thread
+ * Issue a single local request, ensuring that the response
+ * is not sent back up to the command process
+ */
+static void
+issueLocalRequest(int request, void *data, int len, RIL_SOCKET_ID socket_id) {
+    RequestInfo *pRI;
+    int ret;
+    /* Hook for current context */
+    /* pendingRequestsMutextHook refer to &s_pendingRequestsMutex */
+    pthread_mutex_t* pendingRequestsMutexHook = &s_pendingRequestsMutex;
+    /* pendingRequestsHook refer to &s_pendingRequests */
+    RequestInfo**    pendingRequestsHook = &s_pendingRequests;
+
+#if (SIM_COUNT == 2)
+    if (socket_id == RIL_SOCKET_2) {
+        pendingRequestsMutexHook = &s_pendingRequestsMutex_socket2;
+        pendingRequestsHook = &s_pendingRequests_socket2;
+    }
+#endif
+
+    pRI = (RequestInfo *)calloc(1, sizeof(RequestInfo));
+    if (pRI == NULL) {
+        RLOGE("Memory allocation failed for request %s", requestToString(request));
+        return;
+    }
+
+    pRI->local = 1;
+    pRI->token = 0xffffffff;        // token is not used in this context
+
+    pRI->pCI = &(s_commands[request]);
+    pRI->socket_id = socket_id;
+
+    /* Hack to include Samsung requests */
+    if (request > RIL_VENDOR_COMMANDS_OFFSET) {
+        pRI->pCI = &(s_commands_v[request - RIL_VENDOR_COMMANDS_OFFSET]);
+    }
+
+    ret = pthread_mutex_lock(pendingRequestsMutexHook);
+    assert (ret == 0);
+
+    pRI->p_next = *pendingRequestsHook;
+    *pendingRequestsHook = pRI;
+
+    ret = pthread_mutex_unlock(pendingRequestsMutexHook);
+    assert (ret == 0);
+
+    RLOGD("C[locl]> %s", requestToString(request));
+
+    CALL_ONREQUEST(request, data, len, pRI, pRI->socket_id);
 }
 
 RequestInfo *

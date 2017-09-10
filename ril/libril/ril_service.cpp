@@ -3234,10 +3234,20 @@ int radio::getLastCallFailCauseResponse(int slotId,
         } else if (responseLen == sizeof(int)) {
             int *pInt = (int *) response;
             info.causeCode = (LastCallFailCause) pInt[0];
+#ifdef EXYNOS4_ENHANCEMENTS
+        /*
+         * Exynos4 devices send an extra int for LAST_CALL_FAIL_CAUSE
+         * which causes responseFailCause to think it's a string and crash.
+         */
+        } else if ((responselen > 0) && (responselen % sizeof(int) == 0)) {
+            int *pInt = (int *) response;
+            info.causeCode = (LastCallFailCause) pInt[0];
+#else
         } else if (responseLen == sizeof(RIL_LastCallFailCauseInfo))  {
             RIL_LastCallFailCauseInfo *pFailCauseInfo = (RIL_LastCallFailCauseInfo *) response;
             info.causeCode = (LastCallFailCause) pFailCauseInfo->cause_code;
             info.vendorCause = convertCharPtrToHidlString(pFailCauseInfo->vendor_cause);
+#endif
         } else {
             RLOGE("getCurrentCallsResponse Invalid response: NULL");
             if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
@@ -3589,7 +3599,7 @@ int radio::getVoiceRegistrationStateResponse(int slotId,
                RLOGE("getVoiceRegistrationStateResponse Invalid response: NULL");
                if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
         } else if (s_vendorFunctions->version <= 14) {
-            if (numStrings != 15) {
+            if (numStrings < 15) {
                 RLOGE("getVoiceRegistrationStateResponse Invalid response: NULL");
                 if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
             } else {
@@ -3652,7 +3662,7 @@ int radio::getDataRegistrationStateResponse(int slotId,
             if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
         } else if (s_vendorFunctions->version <= 14) {
             int numStrings = responseLen / sizeof(char *);
-            if ((numStrings != 6) && (numStrings != 11)) {
+            if (numStrings < 6) {
                 RLOGE("getDataRegistrationStateResponse Invalid response: NULL");
                 if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
             } else {
@@ -6784,6 +6794,15 @@ void convertRilSignalStrengthToHal(void *response, size_t responseLen,
     } else {
         convertRilSignalStrengthToHalV10(response, responseLen, signalStrength);
     }
+
+    /* Samsung Signal-Strength patches */	
+    // gsm
+    signalStrength.gw.signalStrength &= 0xff;
+    // cdma
+    signalStrength.cdma.dbm %= 256;
+    signalStrength.evdo.dbm %= 256;
+    // lte
+    signalStrength.lte.signalStrength &= 0xff;
 }
 
 int radio::currentSignalStrengthInd(int slotId,
@@ -8173,6 +8192,76 @@ int radio::oemHookRawInd(int slotId,
     } else {
         RLOGE("oemHookRawInd: oemHookService[%d]->mOemHookIndication == NULL", slotId);
     }
+
+    return 0;
+}
+
+int radio::stkSendSMSResultInd(int slotId,
+                         int indicationType, int token, RIL_Errno e, void *response,
+                         size_t responseLen) {
+#if VDBG
+    RLOGD("stkSendSMSResultInd");
+#endif
+
+    return 0;
+}
+
+int radio::amInd(int slotId,
+                         int indicationType, int token, RIL_Errno e, void *response,
+                         size_t responseLen) {
+#if VDBG
+    RLOGD("amInd");
+#endif
+
+    return 0;
+}
+
+int radio::dataSuspenResumeInd(int slotId,
+                         int indicationType, int token, RIL_Errno e, void *response,
+                         size_t responseLen) {
+#if VDBG
+    RLOGD("dataSuspenResumeInd");
+#endif
+
+    return 0;
+}
+
+int radio::wbAMRStateInd(int slotId,
+                         int indicationType, int token, RIL_Errno e, void *response,
+                         size_t responseLen) {
+#if VDBG
+    RLOGD("wbAMRStateInd");
+#endif
+
+    return 0;
+}
+
+int radio::twoMicStateInd(int slotId,
+                         int indicationType, int token, RIL_Errno e, void *response,
+                         size_t responseLen) {
+#if VDBG
+    RLOGD("twoMicStateInd");
+#endif
+
+    return 0;
+}
+
+int radio::wbAMRReportInd(int slotId,
+                         int indicationType, int token, RIL_Errno e, void *response,
+                         size_t responseLen) {
+#if VDBG
+    RLOGD("wbAMRReportInd");
+#endif
+
+    return 0;
+}
+
+int radio::sndMgrClockCtrlInd(int slotId,
+                         int indicationType, int token, RIL_Errno e, void *response,
+                         size_t responseLen) {
+#if VDBG
+     RLOGD("sndMgrClockCtrlInd");
+#endif
 
     return 0;
 }
